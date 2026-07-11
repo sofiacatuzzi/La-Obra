@@ -2,9 +2,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { categories, getCategoryBySlug } from "@/lib/categories";
-import { getProvidersByCategory } from "@/lib/providers";
-import { categoryIcons, ArrowRightIcon, CheckCircleIcon, StarIcon, ShieldIcon } from "@/components/Icons";
+import { categoryIcons, ArrowRightIcon, CheckCircleIcon } from "@/components/Icons";
 import JsonLd from "@/components/JsonLd";
+import ProviderList from "@/components/ProviderList";
 import { siteConfig } from "@/lib/site";
 
 export function generateStaticParams() {
@@ -35,7 +35,6 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
   if (!category) notFound();
 
   const Icon = categoryIcons[category.icon];
-  const proProviders = getProvidersByCategory(category.slug);
 
   return (
     <>
@@ -101,48 +100,11 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
               ))}
             </ul>
 
-            <h2 className="mt-10 text-xl font-bold text-ink-900 capitalize">
-              {category.name === "Gasista" ? "Gasistas" : `${category.nameSingular}s`} destacados
+            <h2 className="mt-10 text-xl font-bold text-ink-900 first-letter:capitalize">
+              {category.name === "Gasista" ? "gasistas" : `${category.nameSingular}s`} destacados
             </h2>
-            <div className="mt-4 space-y-4">
-              {proProviders.map((p) => (
-                <div key={p.id} className="flex flex-col gap-4 rounded-2xl border border-ink-100 bg-white p-5 shadow-soft sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-4">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 text-sm font-bold text-white">
-                      {p.initials}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-ink-900">{p.name}</p>
-                        {p.verified && (
-                          <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
-                            <ShieldIcon className="h-3.5 w-3.5" /> Verificado
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-ink-500">{p.city} · {p.responseTime}</p>
-                      <p className="mt-1 text-sm text-ink-600">{p.bio}</p>
-                      <div className="mt-1 flex items-center gap-1 text-xs text-ink-500">
-                        <StarIcon className="h-3.5 w-3.5 text-brand-500" />
-                        <span className="font-semibold text-ink-900">{p.rating}</span> ({p.reviews} reseñas) · {p.jobsDone} trabajos
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                    <Link href={`/profesional/${p.id}`} className="btn-primary w-full sm:w-auto">
-                      Ver agenda y reservar
-                    </Link>
-                    <Link href={`/solicitar?categoria=${category.slug}`} className="btn-outline w-full sm:w-auto">
-                      Pedir presupuesto
-                    </Link>
-                  </div>
-                </div>
-              ))}
-              {proProviders.length === 0 && (
-                <p className="rounded-xl border border-dashed border-ink-200 p-6 text-sm text-ink-500">
-                  Todavía no hay profesionales cargados en esta categoría en la demo. ¡Publicá tu pedido igual y te avisamos apenas se sume uno!
-                </p>
-              )}
+            <div className="mt-4">
+              <ProviderList categorySlug={category.slug} categoryName={category.nameSingular} />
             </div>
           </div>
 

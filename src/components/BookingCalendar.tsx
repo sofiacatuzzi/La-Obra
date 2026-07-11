@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useLocalStorageList } from "@/lib/useLocalStorageList";
-import { useDemoSession } from "@/lib/useDemoSession";
-import { seedAvailabilityBlocks } from "@/lib/schedule-seed";
-import { SCHEDULE_STORAGE_KEYS, type AvailabilityBlock, type Booking, type ChatMessage, type DateOverride } from "@/lib/schedule-types";
+import { useSupabaseUser } from "@/lib/supabase/useUser";
+import {
+  createBooking,
+  fetchAvailabilityBlocks,
+  fetchBookingsForProvider,
+  fetchDateOverrides,
+} from "@/lib/supabase/scheduleApi";
+import type { AvailabilityBlock, Booking, DateOverride } from "@/lib/schedule-types";
 import { formatDateEs, generateUpcomingSlots } from "@/lib/schedule-utils";
 import { CheckCircleIcon, ShieldIcon } from "@/components/Icons";
 
@@ -18,56 +22,62 @@ type Props = {
 type SelectedSlot = { date: string; blockId: string; label: string; startTime: string; endTime: string };
 
 export default function BookingCalendar({ providerId, providerName, categorySlug }: Props) {
-  const { items: blocks, ready: blocksReady } = useLocalStorageList<AvailabilityBlock>(
-    SCHEDULE_STORAGE_KEYS.availability,
-    seedAvailabilityBlocks
-  );
-  const { items: overrides } = useLocalStorageList<DateOverride>(SCHEDULE_STORAGE_KEYS.overrides, () => []);
-  const { items: bookings, add: addBooking } = useLocalStorageList<Booking>(SCHEDULE_STORAGE_KEYS.bookings, () => []);
-  const { add: addMessage } = useLocalStorageList<ChatMessage>(SCHEDULE_STORAGE_KEYS.messages, () => []);
-  const { session, setClientInfo } = useDemoSession();
+  const { user, profile, loading: userLoading } = useSupabaseUser();
+
+  const [blocks, setBlocks] = useState<AvailabilityBlock[]>([]);
+  const [overrides, setOverrides] = useState<DateOverride[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [dataReady, setDataReady] = useState(false);
 
   const [selected, setSelected] = useState<SelectedSlot | null>(null);
-  const [form, setForm] = useState({ nombre: session.clientName, email: session.clientEmail, descripcion: "" });
+  const [descripcion, setDescripcion] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [confirmedBookingId, setConfirmedBookingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      const [b, o, bk] = await Promise.all([
+        fetchAvailabilityBlocks(providerId),
+        fetchDateOverrides(providerId),
+        fetchBookingsForProvider(providerId),
+      ]);
+      setBlocks(b);
+      setOverrides(o);
+      setBookings(bk);
+      setDataReady(true);
+    }
+    load();
+  }, [providerId]);
 
   const days = useMemo(
     () => generateUpcomingSlots(providerId, blocks, overrides, bookings, 21).slice(0, 8),
     [providerId, blocks, overrides, bookings]
   );
 
-  function handleBook(e: React.FormEvent) {
+  async function handleBook(e: React.FormEvent) {
     e.preventDefault();
-    if (!selected) return;
+    if (!selected || !user || !profile) return;
 
-    const id = `bk-${Date.now()}`;
-    const booking: Booking = {
-      id,
+    setSubmitting(true);
+    const booking = await createBooking({
       providerId,
       providerName,
       categorySlug,
+      clientId: user.id,
+      clientName: profile.full_name,
+      clientEmail: user.email ?? "",
       blockLabel: selected.label,
       date: selected.date,
       startTime: selected.startTime,
       endTime: selected.endTime,
-      clientName: form.nombre,
-      clientEmail: form.email,
-      jobDescription: form.descripcion,
-      status: "pendiente",
-      createdAt: new Date().toISOString(),
-    };
-    addBooking(booking);
-    setClientInfo(form.nombre, form.email);
-    addMessage({
-      id: `msg-${Date.now()}`,
-      bookingId: id,
-      sender: "cliente",
-      kind: "texto",
-      text: form.descripcion,
-      createdAt: new Date().toISOString(),
+      jobDescription: descripcion,
     });
-    setConfirmedBookingId(id);
-    setSelected(null);
+    setSubmitting(false);
+
+    if (booking) {
+      setConfirmedBookingId(booking.id);
+      setSelected(null);
+    }
   }
 
   if (confirmedBookingId) {
@@ -79,14 +89,14 @@ export default function BookingCalendar({ providerId, providerName, categorySlug
           Le avisamos a {providerName}. Podés seguir la conversación y ver si confirma o te propone otro precio desde
           tu chat de la reserva.
         </p>
-        <Link href={`/mis-reservas?highlight=${confirmedBookingId}`} className="btn-primary mt-5">
+        <Link href="/mis-reservas" className="btn-primary mt-5">
           Ir a mi chat con {providerName.split(" ")[0]}
         </Link>
       </div>
     );
   }
 
-  if (!blocksReady) {
+  if (!dataReady || userLoading) {
     return <div className="h-40 animate-pulse rounded-2xl2 border border-ink-100 bg-ink-50" />;
   }
 
@@ -133,33 +143,26 @@ export default function BookingCalendar({ providerId, providerName, categorySlug
         ))}
       </div>
 
-      {selected && (
+      {selected && !user && (
+        <div className="mt-8 rounded-2xl border border-brand-200 bg-brand-50 p-5 text-center">
+          <p className="text-sm text-ink-700">Necesitás una cuenta para reservar este horario.</p>
+          <div className="mt-3 flex justify-center gap-2">
+            <Link href="/login" className="btn-outline">Iniciar sesión</Link>
+            <Link href="/registro" className="btn-primary">Crear cuenta</Link>
+          </div>
+        </div>
+      )}
+
+      {selected && user && profile && (
         <form onSubmit={handleBook} className="mt-8 space-y-4 rounded-2xl border border-brand-200 bg-brand-50 p-5">
           <p className="text-sm font-semibold text-ink-900">
             Reservar {selected.label.toLowerCase()} — {formatDateEs(selected.date)} de {selected.startTime} a {selected.endTime}
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input
-              required
-              value={form.nombre}
-              onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-              placeholder="Tu nombre"
-              className="rounded-xl border border-ink-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
-            />
-            <input
-              required
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              placeholder="Tu email"
-              className="rounded-xl border border-ink-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
-            />
-          </div>
           <textarea
             required
             rows={3}
-            value={form.descripcion}
-            onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
             placeholder="Contale a este profesional qué necesitás"
             className="w-full rounded-xl border border-ink-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
           />
@@ -171,8 +174,8 @@ export default function BookingCalendar({ providerId, providerName, categorySlug
               <button type="button" onClick={() => setSelected(null)} className="btn-outline">
                 Cancelar
               </button>
-              <button type="submit" className="btn-primary">
-                Enviar solicitud
+              <button type="submit" disabled={submitting} className="btn-primary disabled:opacity-60">
+                {submitting ? "Enviando..." : "Enviar solicitud"}
               </button>
             </div>
           </div>

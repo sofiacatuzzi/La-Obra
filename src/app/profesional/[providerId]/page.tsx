@@ -1,34 +1,59 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { providers } from "@/lib/providers";
+import { createClient } from "@/lib/supabase/server";
 import { getCategoryBySlug } from "@/lib/categories";
 import { siteConfig } from "@/lib/site";
 import BookingCalendar from "@/components/BookingCalendar";
-import { ShieldIcon, StarIcon } from "@/components/Icons";
+import { ShieldIcon } from "@/components/Icons";
 
-export function generateStaticParams() {
-  return providers.map((p) => ({ providerId: p.id }));
+async function getProvider(providerId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("provider_profiles")
+    .select("id, category_slug, city, bio, license_number, verified, profiles(full_name)")
+    .eq("id", providerId)
+    .single();
+
+  if (error || !data) return null;
+
+  const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
+
+  return {
+    id: data.id as string,
+    fullName: (profile?.full_name as string) ?? "Profesional",
+    categorySlug: data.category_slug as string,
+    city: (data.city as string) ?? "",
+    bio: (data.bio as string) ?? "",
+    verified: Boolean(data.verified),
+  };
 }
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ providerId: string }> }): Promise<Metadata> {
   const { providerId } = await params;
-  const provider = providers.find((p) => p.id === providerId);
+  const provider = await getProvider(providerId);
   if (!provider) return {};
 
   return {
-    title: `${provider.name} — ${getCategoryBySlug(provider.categorySlug)?.name ?? ""}`,
-    description: `${provider.bio} Reservá un turno con ${provider.name} en ${siteConfig.name}.`,
+    title: `${provider.fullName} — ${getCategoryBySlug(provider.categorySlug)?.name ?? ""}`,
+    description: `${provider.bio} Reservá un turno con ${provider.fullName} en ${siteConfig.name}.`,
     alternates: { canonical: `/profesional/${provider.id}` },
   };
 }
 
 export default async function ProviderProfilePage({ params }: { params: Promise<{ providerId: string }> }) {
   const { providerId } = await params;
-  const provider = providers.find((p) => p.id === providerId);
+  const provider = await getProvider(providerId);
   if (!provider) notFound();
 
   const category = getCategoryBySlug(provider.categorySlug);
+  const initials = provider.fullName
+    .split(" ")
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
 
   return (
     <section className="section bg-ink-50">
@@ -41,16 +66,16 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
                 <Link href={`/servicios/${category.slug}`} className="hover:text-brand-600">{category.name}</Link> /{" "}
               </>
             )}
-            {provider.name}
+            {provider.fullName}
           </nav>
 
           <div className="mt-4 flex items-center gap-4">
             <span className="flex h-16 w-16 items-center justify-center rounded-full bg-ink-900 text-lg font-bold text-white">
-              {provider.initials}
+              {initials || "?"}
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-extrabold text-ink-900">{provider.name}</h1>
+                <h1 className="text-2xl font-extrabold text-ink-900">{provider.fullName}</h1>
                 {provider.verified && (
                   <span className="flex items-center gap-1 text-xs font-medium text-brand-600">
                     <ShieldIcon className="h-3.5 w-3.5" /> Verificado
@@ -58,17 +83,13 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
                 )}
               </div>
               <p className="text-sm text-ink-500">{category?.name} · {provider.city}</p>
-              <div className="mt-1 flex items-center gap-1 text-xs text-ink-500">
-                <StarIcon className="h-3.5 w-3.5 text-brand-500" />
-                <span className="font-semibold text-ink-900">{provider.rating}</span> ({provider.reviews} reseñas) · {provider.jobsDone} trabajos
-              </div>
             </div>
           </div>
 
           <p className="mt-5 max-w-2xl text-sm text-ink-600">{provider.bio}</p>
 
           <div className="mt-8">
-            <BookingCalendar providerId={provider.id} providerName={provider.name} categorySlug={provider.categorySlug} />
+            <BookingCalendar providerId={provider.id} providerName={provider.fullName} categorySlug={provider.categorySlug} />
           </div>
         </div>
 
@@ -77,7 +98,7 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
             <h3 className="text-sm font-semibold text-ink-900">Cómo sigue esto</h3>
             <ol className="mt-3 space-y-2 text-sm text-ink-600">
               <li>1. Elegís un horario y contás qué necesitás.</li>
-              <li>2. {provider.name.split(" ")[0]} te responde por chat y te dice cuánto sale.</li>
+              <li>2. {provider.fullName.split(" ")[0]} te responde por chat y te dice cuánto sale.</li>
               <li>3. Si están de acuerdo, confirmás y pagás la seña por {siteConfig.name}.</li>
             </ol>
           </div>

@@ -1,10 +1,9 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { categories } from "@/lib/categories";
-import { getProvidersByCategory } from "@/lib/providers";
-import { CheckCircleIcon, ShieldIcon, StarIcon } from "@/components/Icons";
+import { CheckCircleIcon, ShieldIcon } from "@/components/Icons";
 
 type FormState = {
   categoria: string;
@@ -34,11 +33,6 @@ export default function RequestQuoteForm({ initialCategory }: { initialCategory?
   });
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitted, setSubmitted] = useState(false);
-
-  const matchedProviders = useMemo(() => {
-    if (!form.categoria) return [];
-    return getProvidersByCategory(form.categoria).slice(0, 3);
-  }, [form.categoria]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -70,30 +64,9 @@ export default function RequestQuoteForm({ initialCategory }: { initialCategory?
         <CheckCircleIcon className="h-12 w-12 text-brand-600" />
         <h2 className="mt-4 text-2xl font-bold text-ink-900">¡Listo, {form.nombre.split(" ")[0]}!</h2>
         <p className="mt-2 text-ink-600">
-          Publicamos tu pedido de <strong>{category?.name.toLowerCase()}</strong> en {form.zona}. En esta demo te
-          mostramos a modo de ejemplo los primeros profesionales que verían tu solicitud:
+          Publicamos tu pedido de <strong>{category?.name.toLowerCase()}</strong> en {form.zona}. Avisamos a los
+          profesionales verificados de esa categoría en tu zona para que te envíen presupuesto.
         </p>
-        <div className="mt-6 space-y-3">
-          {matchedProviders.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-xl border border-ink-100 bg-ink-50/60 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ink-900 text-xs font-bold text-white">
-                  {p.initials}
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-ink-900">{p.name}</p>
-                  <p className="flex items-center gap-1 text-xs text-ink-500">
-                    <StarIcon className="h-3.5 w-3.5 text-brand-500" /> {p.rating} · {p.responseTime}
-                  </p>
-                </div>
-              </div>
-              <span className="badge">Notificado</span>
-            </div>
-          ))}
-          {matchedProviders.length === 0 && (
-            <p className="text-sm text-ink-500">Te avisaremos por email en cuanto un profesional de esta categoría esté disponible en tu zona.</p>
-          )}
-        </div>
         <div className="mt-6 flex items-center gap-2 rounded-xl bg-brand-50 p-4 text-sm text-brand-800">
           <ShieldIcon className="h-5 w-5 shrink-0" />
           Vas a recibir los presupuestos por email y podrás pagar de forma segura desde La Obra cuando elijas uno.

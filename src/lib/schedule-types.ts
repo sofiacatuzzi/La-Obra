@@ -1,9 +1,4 @@
-export const SCHEDULE_STORAGE_KEYS = {
-  availability: "la-obra:availability",
-  overrides: "la-obra:overrides",
-  bookings: "la-obra:bookings",
-  messages: "la-obra:messages",
-} as const;
+export type UserRole = "cliente" | "profesional";
 
 export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 

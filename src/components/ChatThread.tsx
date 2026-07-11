@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useLocalStorageList } from "@/lib/useLocalStorageList";
-import { SCHEDULE_STORAGE_KEYS, type Booking, type ChatMessage } from "@/lib/schedule-types";
+import { useEffect, useMemo, useState } from "react";
+import { fetchMessages, sendMessage, subscribeToMessages, updateBookingRecord } from "@/lib/supabase/scheduleApi";
+import type { Booking, ChatMessage } from "@/lib/schedule-types";
 import { CheckCircleIcon, ShieldIcon, WalletIcon } from "@/components/Icons";
 
 type Props = {
   booking: Booking;
   viewerRole: "cliente" | "profesional";
+  viewerId: string;
   onUpdateBooking: (patch: Partial<Booking>) => void;
 };
 
@@ -15,22 +16,27 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function ChatThread({ booking, viewerRole, onUpdateBooking }: Props) {
-  const { items: allMessages, add: addMessage } = useLocalStorageList<ChatMessage>(
-    SCHEDULE_STORAGE_KEYS.messages,
-    () => []
-  );
+export default function ChatThread({ booking, viewerRole, viewerId, onUpdateBooking }: Props) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [showQuoteInput, setShowQuoteInput] = useState(false);
   const [quoteAmount, setQuoteAmount] = useState("");
 
-  const messages = useMemo(
-    () =>
-      allMessages
-        .filter((m) => m.bookingId === booking.id)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    [allMessages, booking.id]
-  );
+  useEffect(() => {
+    let active = true;
+    fetchMessages(booking.id).then((data) => {
+      if (active) setMessages(data);
+    });
+
+    const unsubscribe = subscribeToMessages(booking.id, (message) => {
+      setMessages((current) => (current.some((m) => m.id === message.id) ? current : [...current, message]));
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [booking.id]);
 
   const lastQuote = useMemo(
     () => [...messages].reverse().find((m) => m.kind === "cotizacion"),
@@ -40,43 +46,48 @@ export default function ChatThread({ booking, viewerRole, onUpdateBooking }: Pro
   const bookingClosed = booking.status === "confirmada" || booking.status === "cancelada" || booking.status === "rechazada";
   const canAcceptQuote = !!lastQuote && lastQuote.sender !== viewerRole && !bookingClosed;
 
-  function sendMessage(kind: ChatMessage["kind"], payload: Partial<ChatMessage>) {
-    addMessage({
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  async function pushMessage(kind: ChatMessage["kind"], payload: { text?: string; amount?: number }) {
+    await sendMessage({
       bookingId: booking.id,
-      sender: viewerRole,
+      senderId: viewerId,
+      senderRole: viewerRole,
       kind,
-      createdAt: new Date().toISOString(),
       ...payload,
     });
   }
 
-  function handleSendText(e: React.FormEvent) {
+  async function handleSendText(e: React.FormEvent) {
     e.preventDefault();
     if (!text.trim()) return;
-    sendMessage("texto", { text: text.trim() });
+    const value = text.trim();
     setText("");
+    await pushMessage("texto", { text: value });
   }
 
-  function handleSendQuote(e: React.FormEvent) {
+  async function handleSendQuote(e: React.FormEvent) {
     e.preventDefault();
     const amount = Number(quoteAmount);
     if (!amount || amount <= 0) return;
-    sendMessage("cotizacion", { amount });
-    if (booking.status === "pendiente") onUpdateBooking({ status: "cotizada" });
     setQuoteAmount("");
     setShowQuoteInput(false);
+    await pushMessage("cotizacion", { amount });
+    if (booking.status === "pendiente") {
+      await updateBookingRecord(booking.id, { status: "cotizada" });
+      onUpdateBooking({ status: "cotizada" });
+    }
   }
 
-  function handleAcceptQuote() {
+  async function handleAcceptQuote() {
     if (!lastQuote?.amount) return;
+    await updateBookingRecord(booking.id, { status: "confirmada", quoteAmount: lastQuote.amount });
     onUpdateBooking({ status: "confirmada", quoteAmount: lastQuote.amount });
-    sendMessage("sistema", { text: `Cotización de $${lastQuote.amount.toLocaleString("es-AR")} aceptada. Reserva confirmada.` });
+    await pushMessage("sistema", { text: `Cotización de $${lastQuote.amount.toLocaleString("es-AR")} aceptada. Reserva confirmada.` });
   }
 
-  function handlePayDeposit() {
+  async function handlePayDeposit() {
+    await updateBookingRecord(booking.id, { depositPaid: true });
     onUpdateBooking({ depositPaid: true });
-    sendMessage("sistema", { text: "Seña pagada por la plataforma. El turno queda confirmado para ambas partes." });
+    await pushMessage("sistema", { text: "Seña pagada por la plataforma. El turno queda confirmado para ambas partes." });
   }
 
   return (

@@ -1,18 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { useLocalStorageList } from "@/lib/useLocalStorageList";
-import { seedAvailabilityBlocks } from "@/lib/schedule-seed";
-import { SCHEDULE_STORAGE_KEYS, dayLabels, type AvailabilityBlock, type DayOfWeek } from "@/lib/schedule-types";
+import { useEffect, useState } from "react";
+import {
+  createAvailabilityBlock,
+  deleteAvailabilityBlock,
+  fetchAvailabilityBlocks,
+  updateAvailabilityBlock,
+} from "@/lib/supabase/scheduleApi";
+import { dayLabels, type AvailabilityBlock, type DayOfWeek } from "@/lib/schedule-types";
 import { CheckCircleIcon, XIcon } from "@/components/Icons";
 
 const dayOptions: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0];
 
 export default function AvailabilityEditor({ providerId }: { providerId: string }) {
-  const { items: blocks, ready, add, update, remove } = useLocalStorageList<AvailabilityBlock>(
-    SCHEDULE_STORAGE_KEYS.availability,
-    seedAvailabilityBlocks
-  );
+  const [blocks, setBlocks] = useState<AvailabilityBlock[]>([]);
+  const [ready, setReady] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState({
     dayOfWeek: 1 as DayOfWeek,
@@ -22,14 +24,24 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
     slotMinutes: 60,
   });
 
-  const providerBlocks = blocks
-    .filter((b) => b.providerId === providerId)
-    .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));
+  async function reload() {
+    const data = await fetchAvailabilityBlocks(providerId);
+    setBlocks(data);
+    setReady(true);
+  }
 
-  function handleAdd(e: React.FormEvent) {
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId]);
+
+  const providerBlocks = [...blocks].sort(
+    (a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)
+  );
+
+  async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    add({
-      id: `av-${Date.now()}`,
+    await createAvailabilityBlock({
       providerId,
       dayOfWeek: draft.dayOfWeek,
       startTime: draft.startTime,
@@ -40,6 +52,17 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
     });
     setShowForm(false);
     setDraft({ dayOfWeek: 1, startTime: "09:00", endTime: "13:00", label: "Visita de chequeo", slotMinutes: 60 });
+    await reload();
+  }
+
+  async function handleToggleVisible(block: AvailabilityBlock) {
+    await updateAvailabilityBlock(block.id, { visible: !block.visible });
+    await reload();
+  }
+
+  async function handleDelete(id: string) {
+    await deleteAvailabilityBlock(id);
+    await reload();
   }
 
   if (!ready) return <div className="h-40 animate-pulse rounded-2xl border border-ink-100 bg-ink-50" />;
@@ -118,7 +141,7 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => update(b.id, { visible: !b.visible })}
+                onClick={() => handleToggleVisible(b)}
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
                   b.visible ? "bg-brand-50 text-brand-700" : "bg-ink-100 text-ink-500"
                 }`}
@@ -127,7 +150,7 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
               </button>
               <button
                 type="button"
-                onClick={() => remove(b.id)}
+                onClick={() => handleDelete(b.id)}
                 aria-label="Eliminar bloque"
                 className="flex h-7 w-7 items-center justify-center rounded-full text-ink-400 hover:bg-ink-100 hover:text-ink-700"
               >

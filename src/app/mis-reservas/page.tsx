@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useDemoSession } from "@/lib/useDemoSession";
-import { useLocalStorageList } from "@/lib/useLocalStorageList";
-import { SCHEDULE_STORAGE_KEYS, type Booking } from "@/lib/schedule-types";
+import { useSupabaseUser } from "@/lib/supabase/useUser";
+import { fetchBookingsForClient } from "@/lib/supabase/scheduleApi";
+import type { Booking } from "@/lib/schedule-types";
 import { formatDateEs } from "@/lib/schedule-utils";
 import ChatThread from "@/components/ChatThread";
 
@@ -25,11 +25,9 @@ const statusStyles: Record<Booking["status"], string> = {
 };
 
 export default function MisReservasPage() {
-  const { session, ready: sessionReady } = useDemoSession();
-  const { items: bookings, update: updateBooking } = useLocalStorageList<Booking>(
-    SCHEDULE_STORAGE_KEYS.bookings,
-    () => []
-  );
+  const { user, loading: userLoading } = useSupabaseUser();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [dataReady, setDataReady] = useState(false);
   const [openBookingId, setOpenBookingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,27 +35,42 @@ export default function MisReservasPage() {
     if (highlight) setOpenBookingId(highlight);
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    fetchBookingsForClient(user.id).then((data) => {
+      setBookings(data);
+      setDataReady(true);
+    });
+  }, [user]);
+
   const myBookings = useMemo(
-    () =>
-      bookings
-        .filter((b) => b.clientEmail.toLowerCase() === session.clientEmail.toLowerCase())
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [bookings, session.clientEmail]
+    () => [...bookings].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [bookings]
   );
 
-  if (!sessionReady) return null;
+  function handleUpdateBooking(id: string, patch: Partial<Booking>) {
+    setBookings((current) => current.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  }
+
+  if (userLoading) return null;
+
+  if (!user) {
+    return (
+      <section className="section container-page text-center">
+        <p className="text-ink-600">Necesitás iniciar sesión para ver tus reservas.</p>
+        <Link href="/login" className="btn-primary mt-4">Iniciar sesión</Link>
+      </section>
+    );
+  }
 
   return (
     <section className="section bg-ink-50">
       <div className="container-page max-w-3xl">
         <h1 className="text-3xl font-extrabold text-ink-900">Mis reservas</h1>
-        <p className="mt-2 text-ink-600">
-          Estás viendo las reservas de <strong>{session.clientEmail}</strong>. Cambiá tu email desde una nueva
-          solicitud si querés simular otro cliente.
-        </p>
+        <p className="mt-2 text-ink-600">Acá vas a ver el estado de cada solicitud y podés seguir el chat con el profesional.</p>
 
         <div className="mt-8 space-y-3">
-          {myBookings.length === 0 && (
+          {dataReady && myBookings.length === 0 && (
             <div className="rounded-2xl border border-dashed border-ink-200 bg-white p-8 text-center">
               <p className="text-sm text-ink-500">Todavía no hiciste ninguna solicitud de turno.</p>
               <Link href="/servicios" className="btn-primary mt-4">Buscar un profesional</Link>
@@ -82,7 +95,12 @@ export default function MisReservasPage() {
 
               {openBookingId === b.id && (
                 <div className="border-t border-ink-100 p-4">
-                  <ChatThread booking={b} viewerRole="cliente" onUpdateBooking={(patch) => updateBooking(b.id, patch)} />
+                  <ChatThread
+                    booking={b}
+                    viewerRole="cliente"
+                    viewerId={user.id}
+                    onUpdateBooking={(patch) => handleUpdateBooking(b.id, patch)}
+                  />
                 </div>
               )}
             </div>
