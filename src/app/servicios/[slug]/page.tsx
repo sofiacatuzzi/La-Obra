@@ -128,9 +128,14 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
                       </div>
                     </div>
                   </div>
-                  <Link href={`/solicitar?categoria=${category.slug}`} className="btn-outline w-full sm:w-auto">
-                    Pedir presupuesto
-                  </Link>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                    <Link href={`/profesional/${p.id}`} className="btn-primary w-full sm:w-auto">
+                      Ver agenda y reservar
+                    </Link>
+                    <Link href={`/solicitar?categoria=${category.slug}`} className="btn-outline w-full sm:w-auto">
+                      Pedir presupuesto
+                    </Link>
+                  </div>
                 </div>
               ))}
               {proProviders.length === 0 && (

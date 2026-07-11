@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import JsonLd from "@/components/JsonLd";
+import RoleSwitcher from "@/components/RoleSwitcher";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
 
@@ -57,6 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             areaServed: "Argentina",
           }}
         />
+        <RoleSwitcher />
         <Header />
         <main className="flex-1">{children}</main>
         <Footer />
